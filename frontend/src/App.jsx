@@ -1,145 +1,159 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import axios from 'axios';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ScoreCircle } from './components/ScoreCircle';
+import { ReportCard } from './components/ReportCard';
+import { FileCode, UploadCloud, Download, RefreshCw } from 'lucide-react';
+import jsPDF from 'jspdf';
 
-const API_URL = "http://localhost:8000/analyze"; // Your FastAPI Backend Endpoint
+// Loader component for when analysis is in progress
+const Loader = () => (
+    <div className="flex flex-col items-center justify-center text-center p-8">
+        <motion.div
+            className="w-16 h-16 bg-cyan-400 rounded-full"
+            animate={{ scale: [1, 1.2, 1], opacity: [0.8, 1, 0.8], boxShadow: ["0 0 20px #06b6d4", "0 0 40px #06b6d4", "0 0 20px #06b6d4"] }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+        />
+        <p className="mt-6 text-lg text-cyan-300 font-medium">AI is analyzing your code...</p>
+    </div>
+);
 
-function App() {
+const API_URL = "http://localhost:8000/analyze";
+
+export default function App() {
   const [file, setFile] = useState(null);
   const [review, setReview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [fileName, setFileName] = useState("");
 
   const handleFileChange = (e) => {
-    setFile(e.target.files[0]);
-    setReview(null); // Reset review on new file selection
-    setError(null);
+    const selectedFile = e.target.files[0];
+    if (selectedFile) {
+      setFile(selectedFile);
+      setFileName(selectedFile.name);
+      setReview(null);
+      setError(null);
+    }
   };
 
-  const handleUpload = async () => {
+  const handleAnalyze = async () => {
     if (!file) {
       setError("Please select a code file first.");
       return;
     }
-
     setLoading(true);
     setError(null);
-
     const formData = new FormData();
     formData.append("file", file);
-
     try {
       const response = await axios.post(API_URL, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setReview(response.data); // The backend returns a clean JSON object
+      setReview(response.data);
     } catch (err) {
-      console.error("API Error:", err);
-      const detail = err.response?.data?.detail || "Could not connect to the backend API or an unknown error occurred.";
+      const detail = err.response?.data?.detail || "Could not connect to the backend API. Please ensure it's running.";
       setError(`Analysis Failed: ${detail}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // Function to render score based on color
-  const getScoreColor = (score) => {
-    if (score >= 8) return 'text-green-600 bg-green-100';
-    if (score >= 5) return 'text-yellow-600 bg-yellow-100';
-    return 'text-red-600 bg-red-100';
+  const handleReset = () => {
+    setFile(null);
+    setFileName("");
+    setReview(null);
+    setError(null);
   };
 
-  // Component to render a section of the review
-  const ReviewSection = ({ title, content, isList = false }) => (
-    <div className="mb-4">
-      <h3 className="text-lg font-semibold text-gray-700 border-b pb-1 mb-2">{title}</h3>
-      {isList ? (
-        <ul className="list-disc list-inside space-y-1 text-gray-600">
-          {content.split('\n').filter(line => line.trim()).map((line, index) => (
-            <li key={index}>{line.trim().replace(/^\*\s*|\d+\.\s*/, '')}</li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-gray-600 whitespace-pre-line">{content}</p>
-      )}
-    </div>
-  );
+  const handleDownloadPdf = () => {
+    const doc = new jsPDF();
+    doc.setFont("Inter", "normal");
+    doc.setFontSize(22);
+    doc.text("CodeSense AI Review Report", 10, 20);
+    doc.setFontSize(16);
+    doc.text(`File: ${fileName}`, 10, 30);
+    doc.text(`Score: ${review.score}/10`, 10, 40);
+    let y = 60;
+    const sections = ['summary', 'readability', 'modularity', 'bugs', 'suggestions'];
+    sections.forEach(key => {
+        doc.setFontSize(14);
+        doc.setFont("Inter", "bold");
+        doc.text(key.charAt(0).toUpperCase() + key.slice(1), 10, y);
+        y += 7;
+        doc.setFontSize(10);
+        doc.setFont("Inter", "normal");
+        const text = doc.splitTextToSize(review[key], 180);
+        doc.text(text, 10, y);
+        y += text.length * 5 + 10;
+    });
+    doc.save(`CodeSense_Report_${fileName}.pdf`);
+  };
 
   return (
-    <div className="min-h-screen bg-gray-100 p-8">
-      <div className="max-w-4xl mx-auto bg-white shadow-xl rounded-lg p-8">
-        <h1 className="text-3xl font-extrabold text-blue-700 mb-6 border-b pb-3">
-          CodeSense: AI Code Review Assistant
-        </h1>
-
-        {/* --- File Upload Area --- */}
-        <div className="flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4 mb-8 p-4 border rounded-md bg-blue-50">
-          <label className="flex-shrink-0 text-gray-700 font-medium">Select Code File:</label>
-          <input
-            type="file"
-            onChange={handleFileChange}
-            className="flex-grow file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200"
-            accept=".py,.js,.java,.ts,.cpp,.c"
-          />
-          <button
-            onClick={handleUpload}
-            disabled={loading || !file}
-            className={`w-full md:w-auto px-6 py-2 rounded-lg text-white font-semibold transition-colors ${
-              loading || !file
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700 shadow-md'
-            }`}
-          >
-            {loading ? 'Analyzing...' : 'Analyze Code'}
-          </button>
-        </div>
-
-        {/* --- Error and Success Status --- */}
-        {error && (
-          <div className="p-4 mb-6 bg-red-100 text-red-700 border border-red-300 rounded-md font-medium">
-            Error: {error}
+    <div className="min-h-screen w-full p-4 sm:p-8 font-sans flex flex-col items-center">
+      <div className="w-full max-w-5xl bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 shadow-2xl shadow-black/40 rounded-2xl p-6 sm:p-8">
+        <header className="flex items-center mb-8 pb-4 border-b border-slate-700">
+          <FileCode className="h-8 w-8 mr-3 text-cyan-400" />
+          <h1 className="text-3xl font-extrabold bg-gradient-to-r from-cyan-400 to-blue-500 text-transparent bg-clip-text">
+           CodeSense AI
+          </h1>
+        </header>
+        
+        <section className="mb-8">
+          <div className="flex flex-col md:flex-row items-center gap-4 p-4 border-2 border-dashed border-slate-600 rounded-lg bg-slate-900/30">
+            <label htmlFor="file-upload" className="flex-grow w-full flex items-center justify-center px-4 py-3 bg-slate-700/50 text-slate-300 rounded-lg cursor-pointer hover:bg-slate-700 transition-colors">
+              <UploadCloud className="h-5 w-5 mr-2" />
+              <span>{fileName || "Select a code file..."}</span>
+            </label>
+            <input id="file-upload" type="file" className="hidden" onChange={handleFileChange} accept=".py,.js,.java,.ts,.cpp,.c" />
+            <button
+              onClick={handleAnalyze}
+              disabled={loading || !file}
+              className="w-full md:w-auto px-8 py-3 rounded-lg text-white font-semibold transition-all duration-300 flex items-center justify-center bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-600 disabled:bg-gray-600 disabled:cursor-not-allowed shadow-lg shadow-cyan-500/20 transform hover:scale-105"
+            >
+              Analyze Code
+            </button>
           </div>
-        )}
-        {file && !loading && !review && !error && (
-          <div className="p-4 mb-6 bg-yellow-100 text-yellow-700 border border-yellow-300 rounded-md">
-            File selected: **{file.name}**. Click 'Analyze Code' to start the review.
-          </div>
-        )}
+        </section>
 
-        {/* --- Review Report Display --- */}
-        {review && (
-          <div className="mt-8 border-t pt-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">Review Report for {file.name}</h2>
-
-            <div className="flex justify-between items-start mb-6 pb-4 border-b">
-              <div className="flex-1 pr-4">
-                <h3 className="text-xl font-semibold text-gray-700 mb-2">Overall Summary</h3>
-                <p className="text-gray-600 italic">{review.summary}</p>
-              </div>
-              <div className={`p-4 rounded-full font-extrabold text-3xl flex-shrink-0 text-center ${getScoreColor(review.score)}`}>
-                <span className="text-lg font-medium block">Score</span>
-                {review.score}/10
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <ReviewSection title="Readability Analysis" content={review.readability} />
-                <ReviewSection title="Modularity & Structure" content={review.modularity} />
-            </div>
-
-            <div className="mt-6 border-t pt-6">
-                <ReviewSection title="Potential Bugs & Issues" content={review.bugs} isList={true} />
-            </div>
-            
-            <div className="mt-6 border-t pt-6">
-                <ReviewSection title="Actionable Improvement Suggestions" content={review.suggestions} isList={true} />
-            </div>
-          </div>
-        )}
+        <main>
+          <AnimatePresence mode="wait">
+            {loading && <motion.div key="loader"><Loader /></motion.div>}
+            {error && <motion.p key="error" className="text-center text-red-400 bg-red-900/50 p-4 rounded-lg">{error}</motion.p>}
+            {review && (
+              <motion.div key="results" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-200">Review Report for <span className="text-cyan-400">{fileName}</span></h2>
+                  <div className="flex gap-2">
+                    <button onClick={handleDownloadPdf} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg" title="Download PDF"><Download /></button>
+                    <button onClick={handleReset} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg" title="Analyze New File"><RefreshCw /></button>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <div className="lg:col-span-1 flex justify-center">
+                    <ScoreCircle score={review.score} />
+                  </div>
+                  <div className="lg:col-span-2">
+                    <ReportCard title="Overall Summary" content={review.summary} />
+                    <ReportCard title="Readability Analysis" content={review.readability} />
+                  </div>
+                </div>
+                <div className="mt-6 border-t border-gray-700 pt-6">
+                   <ReportCard title="Modularity & Structure" content={review.modularity} />
+                </div>
+                 <div className="mt-6 border-t border-gray-700 pt-6">
+                  <ReportCard title="Potential Bugs & Issues" content={review.bugs} isList={true} />
+                </div>
+                <div className="mt-6 border-t border-gray-700 pt-6">
+                  <ReportCard title="Actionable Improvement Suggestions" content={review.suggestions} isList={true} />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </main>
       </div>
     </div>
   );
 }
-
-export default App;
