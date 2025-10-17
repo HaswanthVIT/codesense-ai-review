@@ -6,7 +6,7 @@ This project is an AI-powered tool that automatically reviews code files for qua
 
 ## 🚀 Demo Video
 
-**[Watch the full demo video here]( )**
+**[Watch the full demo video here]( https://youtu.be/0GvGbnOofQA)**
 
 ---
 
